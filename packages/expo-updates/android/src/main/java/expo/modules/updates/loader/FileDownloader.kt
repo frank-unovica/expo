@@ -49,7 +49,7 @@ open class FileDownloader(context: Context) {
     return File(context.cacheDir, "okhttp")
   }
 
-  private fun downloadFileToPath(request: Request, destination: File, callback: FileDownloadCallback) {
+  private fun downloadFileToPath(request: Request, destination: File, codeSigningCertificate: Crypto.CodeSigningCertificate?, codeSigningSignature: Crypto.CodeSigningSignature?, callback: FileDownloadCallback) {
     downloadData(
       request,
       object : Callback {
@@ -69,8 +69,15 @@ open class FileDownloader(context: Context) {
             return
           }
           try {
+            val codesigningConfiguration = codeSigningCertificate?.let {
+              Crypto.CodeSigningConfiguration(
+                it,
+                codeSigningSignature ?: Crypto.CodeSigningSignature(response.header("expo-signed-hash") ?: throw IOException("Signature not found for file in either expo-signed-hash header or manifest field"))
+              )
+            }
+
             response.body()!!.byteStream().use { inputStream ->
-              val hash = UpdatesUtils.sha256AndWriteToFile(inputStream, destination)
+              val hash = UpdatesUtils.sha256AndMaybeVerifySignedHashAndWriteToDestinationFile(inputStream, destination, codesigningConfiguration)
               callback.onSuccess(destination, hash)
             }
           } catch (e: Exception) {
@@ -111,13 +118,26 @@ open class FileDownloader(context: Context) {
               return
             }
             try {
+              val signedHash = response.header("expo-signed-hash")
+              val codeSigningCertificate = configuration.codeSigningCertificate?.let { Crypto.CodeSigningCertificate(it) };
+              val codesigningInfo = codeSigningCertificate?.let {
+                Crypto.CodeSigningConfiguration(
+                  it,
+                  Crypto.CodeSigningSignature(signedHash ?: throw IOException("No expo-signed-hash header specified for manifest file"))
+                )
+              }
+
+              response.body()!!.byteStream().use { inputStream ->
+                UpdatesUtils.maybeVerifySignedHash(inputStream, codesigningInfo)
+              }
+
               val updateResponseBody = response.body()!!.string()
               val updateResponseJson = extractUpdateResponseJson(updateResponseBody, configuration)
               val isSignatureInBody = updateResponseJson.has("manifestString") && updateResponseJson.has("signature")
               val signature = if (isSignatureInBody) {
                 updateResponseJson.getNullable("signature")
               } else {
-                response.header("expo-manifest-signature", null)
+                response.header("expo-manifest-signature")
               }
 
               /**
@@ -128,18 +148,21 @@ open class FileDownloader(context: Context) {
                *   signature: string;
                * }
                */
-              val manifestString =
-                if (isSignatureInBody) updateResponseJson.getString("manifestString") else updateResponseBody
+              val manifestString = if (isSignatureInBody) {
+                updateResponseJson.getString("manifestString")
+              } else {
+                updateResponseBody
+              }
               val preManifest = JSONObject(manifestString)
 
               // XDL serves unsigned manifests with the `signature` key set to "UNSIGNED".
               // We should treat these manifests as unsigned rather than signed with an invalid signature.
               val isUnsignedFromXDL = "UNSIGNED" == signature
               if (signature != null && !isUnsignedFromXDL) {
-                Crypto.verifyPublicRSASignature(
+                Crypto.verifyExpoPublicRSASignature(
+                  this@FileDownloader,
                   manifestString,
                   signature,
-                  this@FileDownloader,
                   object : RSASignatureListener {
                     override fun onError(exception: Exception, isNetworkError: Boolean) {
                       callback.onFailure("Could not validate signed manifest", exception)
@@ -194,10 +217,17 @@ open class FileDownloader(context: Context) {
       asset.relativePath = filename
       callback.onSuccess(asset, false)
     } else {
+      val assetSignature = asset.signature
+      val codeSigningSignatureInfo = if (assetSignature !== null) {
+        Crypto.CodeSigningSignature(assetSignature)
+      } else null
+
       try {
         downloadFileToPath(
           setHeadersForUrl(asset.url!!, configuration),
           path,
+          configuration.codeSigningCertificate?.let { Crypto.CodeSigningCertificate(it) },
+          codeSigningSignatureInfo,
           object : FileDownloadCallback {
             override fun onFailure(e: Exception) {
               callback.onFailure(e, asset)

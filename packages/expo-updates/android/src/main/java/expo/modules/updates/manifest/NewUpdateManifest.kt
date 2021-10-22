@@ -60,6 +60,7 @@ class NewUpdateManifest private constructor(
           url = Uri.parse(mLaunchAsset.getString("url"))
           isLaunchAsset = true
           embeddedAssetFilename = EmbeddedLoader.BUNDLE_FILENAME
+          signature = mLaunchAsset.getNullable("signature")
         }
       )
     } catch (e: JSONException) {
@@ -76,6 +77,7 @@ class NewUpdateManifest private constructor(
             ).apply {
               url = Uri.parse(assetObject.getString("url"))
               embeddedAssetFilename = assetObject.getNullable("embeddedAssetFilename")
+              signature = assetObject.getNullable("signature")
             }
           )
         } catch (e: JSONException) {
