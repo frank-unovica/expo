@@ -1,5 +1,8 @@
 package expo.modules.kotlin
 
+import android.app.Activity
+import android.content.Intent
+import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import expo.modules.core.interfaces.ActivityProvider
@@ -13,19 +16,23 @@ import expo.modules.interfaces.permissions.Permissions
 import expo.modules.interfaces.sensors.SensorServiceInterface
 import expo.modules.interfaces.taskManager.TaskManagerInterface
 import expo.modules.kotlin.events.EventName
+import expo.modules.kotlin.events.OnActivityResultPayload
 import java.lang.ref.WeakReference
 
 class AppContext(
   modulesProvider: ModulesProvider,
   val legacyModuleRegistry: expo.modules.core.ModuleRegistry,
   private val reactContextHolder: WeakReference<ReactApplicationContext>
-) : LifecycleEventListener {
+) : LifecycleEventListener, ActivityEventListener {
   val registry = ModuleRegistry(WeakReference(this)).register(modulesProvider)
 
   init {
-    requireNotNull(reactContextHolder.get()) {
+    val reactContext = requireNotNull(reactContextHolder.get()) {
       "The app context should be created with valid react context."
-    }.addLifecycleEventListener(this)
+    }
+
+    reactContext.addLifecycleEventListener(this)
+    reactContext.addActivityEventListener(this)
   }
 
   /**
@@ -120,5 +127,24 @@ class AppContext(
 
   override fun onHostDestroy() {
     registry.post(EventName.ACTIVITY_DESTROYS)
+  }
+
+  override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
+    registry.post(
+      EventName.ON_ACTIVITY_RESULT,
+      activity,
+      OnActivityResultPayload(
+        requestCode,
+        resultCode,
+        data
+      )
+    )
+  }
+
+  override fun onNewIntent(intent: Intent?) {
+    registry.post(
+      EventName.ON_NEW_INTENT,
+      intent
+    )
   }
 }

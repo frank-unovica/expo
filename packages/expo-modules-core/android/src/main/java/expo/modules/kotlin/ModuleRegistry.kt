@@ -36,9 +36,9 @@ class ModuleRegistry(
   }
 
   @Suppress("UNCHECKED_CAST")
-  fun <Sender> post(eventName: EventName, sender: Sender) {
+  fun <Payload> post(eventName: EventName, payload: Payload) {
     iterator().forEach {
-      it.post(eventName, sender)
+      it.post(eventName, payload)
     }
   }
 

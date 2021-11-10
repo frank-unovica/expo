@@ -13,10 +13,15 @@
 
 package expo.modules.kotlin.modules
 
+import android.app.Activity
+import android.content.Intent
 import expo.modules.kotlin.events.BasicEventListener
 import expo.modules.kotlin.events.EventListener
 import expo.modules.kotlin.events.EventName
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.events.EventListenerWithPayload
+import expo.modules.kotlin.events.EventListenerWithSenderAndPayload
+import expo.modules.kotlin.events.OnActivityResultPayload
 import expo.modules.kotlin.methods.AnyMethod
 import expo.modules.kotlin.methods.Method
 import expo.modules.kotlin.methods.PromiseMethod
@@ -128,5 +133,14 @@ class ModuleDefinitionBuilder {
 
   inline fun onActivityDestroys(crossinline body: () -> Unit) {
     eventListeners[EventName.ACTIVITY_DESTROYS] = BasicEventListener(EventName.ACTIVITY_DESTROYS) { body() }
+  }
+
+  inline fun onNewIntent(crossinline body: (Intent) -> Unit) {
+    eventListeners[EventName.ON_NEW_INTENT] = EventListenerWithPayload<Intent>(EventName.ON_NEW_INTENT) { body(it) }
+  }
+
+  inline fun onActivityResult(crossinline body: (Activity, OnActivityResultPayload) -> Unit) {
+    eventListeners[EventName.ON_ACTIVITY_RESULT] =
+      EventListenerWithSenderAndPayload<Activity, OnActivityResultPayload>(EventName.ON_ACTIVITY_RESULT) { sender, payload -> body(sender, payload) }
   }
 }
